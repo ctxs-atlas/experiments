@@ -14,6 +14,7 @@ server_schema = {
 	      {
 		   "name" : "name",
 		   "type" : "string",
+                   "description" : "Name of the server",
                    "pattern" : "[a-zA-Z_][a-zA-Z0-9_]*",
                    "maxlength" : 10,
 		   "required" : True,
@@ -22,12 +23,14 @@ server_schema = {
 	      {
 		   "name" : "ipaddress",
 		   "type" : "ipaddress",
+                   "description" : "IP address of the server",
 		   "required" : True,
 		   "updatable" : True
 	      },      
 	      {
 		   "name" : "port",
 		   "type" : "tcp-port",
+                   "description" : "TCP port of the server",
 		   "required" : True,
 		   "updatable" : True
 	      }

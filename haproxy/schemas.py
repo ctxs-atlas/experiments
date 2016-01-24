@@ -1,9 +1,12 @@
 from __future__ import print_function # In python 2.7
 
 import sys
-
 import re
 import socket
+from common_schemas import schema_types
+
+
+SIMPLE_TYPES = ["string", "number", "boolean", "ipaddress", "tcp-port"]
 
 def _extract_valid_attribute_names(schema):
 
@@ -81,8 +84,21 @@ def _validate_string_attribute_value(name, value, attr_schema, entity_schema):
     if "maxlength" in attr_schema:
         maxlength = attr_schema["maxlength"]
         if len(value) > maxlength:
-            error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid value. string must not exceed '" + str(attr_schema["maxlength"]) + "'."  
+            error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid value. string length must not exceed '" + str(attr_schema["maxlength"]) + "'."  
             return error 
+
+
+    if "minlength" in attr_schema:
+        minlength = attr_schema["minlength"]
+        if len(value) < minlength:
+            error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid value. string length must be at least '" + str(attr_schema["maxlength"]) + "'."  
+            return error 
+
+    if "allowed-values" in attr_schema:
+        if not value in attr_schema["allowed-values"]:
+            error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid value. Valid values are: '" + str(attr_schema["allowed-values"]) + "'."  
+            return error 
+
 
 def _validate_ipaddress_attribute_value(name, value, attr_schema, entity_schema):
 
@@ -110,20 +126,99 @@ def _validate_tcpport_attribute_value(name, value, attr_schema, entity_schema):
         error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid port value: '" + str(value) + "'"
         return error
 
-def _validate_attr_value(name, value, attr_schema, entity_schema):
+
+def _validate_schematype_attribute_value(name, value, attr_schema, entity_schema):
+    return validate_entity_attributes_for_creation(value, attr_schema)
+
+
+def _validate_simple_attr_value(name, value, attr_schema, entity_schema):
     attr_type = attr_schema["type"]
 
-    if attr_type == "number":
-        return  _validate_number_attribute_value(name, value, attr_schema, entity_schema)
+    errors = []
 
-    if attr_type == "string":
-        return  _validate_string_attribute_value(name, value, attr_schema, entity_schema)
+    if attr_type =="number":
+        error =  _validate_number_attribute_value(name, value, attr_schema, entity_schema)
+    elif attr_type == "string":
+        error =  _validate_string_attribute_value(name, value, attr_schema, entity_schema)
 
-    if attr_type == "ipaddress":
-        return  _validate_ipaddress_attribute_value(name, value, attr_schema, entity_schema)
+    elif attr_type == "ipaddress":
+        error =  _validate_ipaddress_attribute_value(name, value, attr_schema, entity_schema)
+    elif attr_type == "tcp-port":
+        error = _validate_tcpport_attribute_value(name, value, attr_schema, entity_schema)
 
-    if attr_type == "tcp-port":
-        return  _validate_tcpport_attribute_value(name, value, attr_schema, entity_schema)
+    if error:
+        errors.append(error)
+
+    return errors
+
+
+def _validate_list_attr_value(name, value, attr_schema, entity_schema):
+
+    errors = []
+
+    if not (type(value) is list):
+        error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid value: '" + value
+        error += "'. Expecting a list"
+
+    for item in value:
+        item_errors =  _validate_simple_attr_value(attr_name, entity[attr_name], attr_schema, schema)
+        if item_errors:
+	    errors.extend(item_errors)
+
+    return errors
+
+def _validate_complex_attr_value_for_creation(name, value, attr_schema, entity_schema):
+
+    errors = []
+
+    type_schemaname = attr_schema["type"]
+
+    if type_schemaname in schema_types:
+        type_schema = schema_types[type_schemaname]
+        return validate_entity_attributes_for_creation(value, type_schema)
+
+    # If this is list type
+    if type_schemaname in [sch_tp + "[]" for sch_tp in schema_types]:
+        # remove the trailing [] from type name.
+        item_type_schemaname = type_schemaname[:-2] 
+        type_schema = schema_types[item_type_schemaname]
+        for item in value:
+           success, sub_errors = validate_entity_attributes_for_creation(item, type_schema)
+           if not success:
+               errors.extend(sub_errors)
+    else:
+        error = "Schema error: The definition of type '" + type_schemaname + "' is not found"
+        errors.append(error)
+
+
+    return errors
+
+
+def _validate_complex_attr_value_for_update(name, value, attr_schema, entity_schema):
+
+    errors = []
+
+    type_schemaname = attr_schema["type"]
+
+    if type_schemaname in schema_types:
+        type_schema = schema_types[type_schemaname]
+        return validate_entity_attributes_for_creation(value, type_schema)
+
+    # If this is list type
+    if type_schemaname in [sch_tp + "[]" for sch_tp in schema_types]:
+        # remove the trailing [] from type name.
+        item_type_schemaname = type_schemaname[:-2] 
+        type_schema = schema_types[item_type_schemaname]
+        for item in value:
+           success, errors = validate_entity_attributes_for_update(item, type_schema)
+           if not success:
+               errors.extend(errors)
+    else:
+        error = "Schema error: The definition of type '" + type_schemaname + "' is not found"
+        errors.append(error)
+
+
+    return errors
 
 def _validate_oneof_rule(entity, entity_type, rule):
 
@@ -161,13 +256,19 @@ def validate_entity_attributes_for_creation(entity, schema):
 
     for attr_name in entity:
         attr_schema =  _extract_attribute_schema(attr_name, schema)
-        error = _validate_attr_value(attr_name, entity[attr_name], attr_schema, schema)
-        if error:
-            errors.append(error) 
+        attr_type = attr_schema["type"]
+        if attr_type in SIMPLE_TYPES:
+            sub_errors = _validate_simple_attr_value(attr_name, entity[attr_name], attr_schema, schema) 
+        elif attr_type in [st + "[]" for st in SIMPLE_TYPES]:
+            sub_errors = _validate_list_attr_value(attr_name, entity[attr_name], attr_schema, schema) 
+        else:
+            sub_errors = _validate_complex_attr_value_for_creation(attr_name, entity[attr_name], attr_schema, schema)
+
+        if sub_errors:
+	    errors.extend(sub_errors)
 
 
     # Validate remaining schema rules
-
     if "validation_rules" in schema:
         for rule in schema["validation_rules"]:
             rule_type = rule["type"]
@@ -175,10 +276,12 @@ def validate_entity_attributes_for_creation(entity, schema):
                 error = _validate_oneof_rule(entity, schema["type"], rule)
                 if error:
                     errors.append(error)
-                  
+
     if errors:
         return False, errors
     return True, None
+
+
 
 def validate_entity_attributes_for_update(entity, schema):
     errors = [] 
@@ -204,9 +307,16 @@ def validate_entity_attributes_for_update(entity, schema):
 
     for attr_name in entity:
         attr_schema =  _extract_attribute_schema(attr_name, schema)
-        error = _validate_attr_value(attr_name, entity[attr_name], attr_schema, schema)
-        if error:
-            errors.append(error) 
+        attr_type = attr_schema["type"]
+        if attr_type in SIMPLE_TYPES:
+            sub_errors = _validate_simple_attr_value(attr_name, entity[attr_name], attr_schema, schema) 
+        elif attr_type in [st + "[]" for st in SIMPLE_TYPES]:
+            sub_errors = _validate_list_attr_value(attr_name, entity[attr_name], attr_schema, schema) 
+        else:
+            sub_errors = _validate_complex_attr_value_for_update(attr_name, entity[attr_name], attr_schema, schema)
+
+        if sub_errors:
+	    errors.extend(sub_errors)
 
     if errors:
         return False, errors

@@ -2,7 +2,9 @@
 from __future__ import print_function # In python 2.7
 
 import sys
+import json
 
+from flask import jsonify
 from haproxy_conf import read_haproxy_conf, save_haproxy_conf
 
 
@@ -163,32 +165,15 @@ def _convert_obj_to_confline(obj_type, obj_id, obj):
 
     obj_string = _get_confline_prefix(obj_type, obj_id)
 
-    spacing = " "
-    after_first = False
+    obj_string += json.dumps(obj)
 
-    for key in obj:
-       if after_first:
-           obj_string += spacing
-       else:
-           after_first = True
-
-       obj_string += key + ":" + str(obj[key])
+    print(obj_string, file=sys.stderr)
 
     return obj_string
 
 def _convert_confline_to_obj(obj_string, obj_type):
    
-    obj = dict()
-
-    items = obj_string.split(" ")
-
-    for item in items:
-        try:
-            key, value = item.split(":")
-            obj[key] = value
-        except:
-            error = "Malformatted entry in config file metasection:%s" % obj_string
-            return False, [error], None            
+    obj = json.loads(obj_string)      
 
     return True, None, obj
 
@@ -200,18 +185,24 @@ def _retrieve_conflines_from_metasection(metasection, obj_type):
     matching_lines = []
     for confline in metasection:
         if confline.startswith(confline_prefix):
-             
+             matching_line = dict()
              #advance past the object id field
              start_index = len(confline_prefix)
              end_index = start_index
              while confline[end_index] != " ":
                  end_index +=1
              objid_str = confline[start_index:end_index+1]
+             try:
+                matching_line["id"] = int(objid_str)
+             except:
+                #skip malformed entry
+                #XXX -TODO We should probably at least warn the user that an entry in file is malformatted.
+                pass
 
              while confline[end_index] == " ":
                  end_index +=1
 
-             matching_line = "id:" + objid_str + confline[end_index:]
+             matching_line["obj"] = confline[end_index:]
              matching_lines.append(matching_line)
 
     return matching_lines
@@ -221,8 +212,11 @@ def _retrieve_confline_from_metasection(metasection, obj_type, obj_id):
 
     confline_prefix = _get_confline_prefix(obj_type, obj_id)
     
+    print("confline_prefix:%s" % confline_prefix, file=sys.stderr)
     for confline in metasection:
+        print("confline:%s" % confline, file=sys.stderr)
         if confline.startswith(confline_prefix):
+            print("found the line", file=sys.stderr)
             return confline[len(confline_prefix):]
 
     return None
@@ -293,16 +287,15 @@ def get_objects_config(obj_type):
      obj_list = []
 
      for confline in conflines:
-         success, errors, obj = _convert_confline_to_obj(confline, obj_type)
+         success, errors, obj = _convert_confline_to_obj(confline["obj"], obj_type)
 
          if not success:
              return False, errors, None
 
+         obj["id"] = confline["id"]
          obj_list.append(obj)
 
      return success, None, obj_list
-
-
 
 
 def get_object_config(obj_type, obj_id):
@@ -322,7 +315,9 @@ def get_object_config(obj_type, obj_id):
      if not success:
          return False, errors, None
 
+
      return success, None, obj
+
 
 def add_object_config(obj_type, obj):
 
