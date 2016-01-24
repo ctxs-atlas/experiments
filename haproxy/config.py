@@ -272,6 +272,15 @@ def _update_metasection_with_updated_object(metasection, obj_type, obj_id, obj):
 
 
 
+def _update_metasection_without_object(metasection, obj_type, obj_id):
+
+    index = _retrieve_confline_index_from_metasection(metasection, obj_type, obj_id)
+
+    del metasection[index]
+
+    return True, None, metasection
+
+
 def get_objects_config(obj_type):
 
      success, errors, before_metasection, metasection, after_metasection = _extract_config_sections()
@@ -356,3 +365,24 @@ def update_object_config(obj_type, obj_id, current_obj, obj_updates):
          return False, errors, None
 
      return success, None, updated_obj
+
+
+
+def delete_object_config(obj_type, obj_id):
+
+     success, errors, before_metasection, metasection, after_metasection = _extract_config_sections()
+
+     if not success:
+         return False, errors
+
+     success, errors, metasection = _update_metasection_without_object(metasection, obj_type, obj_id)
+
+     if not success:
+         return False, errors
+
+     success, errors = _merge_config_sections(before_metasection, metasection, after_metasection)
+
+     if not success:
+         return False, errors
+
+     return success, None

@@ -4,7 +4,7 @@ import sys
 
 
 from schemas import validate_entity_attributes_for_creation, validate_entity_attributes_for_update
-from config import add_object_config, get_object_config, get_objects_config, update_object_config
+from config import add_object_config, get_object_config, get_objects_config, update_object_config, delete_object_config
 
 
 monitor_schema = {
@@ -88,4 +88,15 @@ def update_monitor_in_conf(monitor_id, monitor_updates):
     success, errors, obj_id = update_object_config("monitor", monitor_id, current_monitor, monitor_updates)
 
     return success, errors, obj_id
+
+def delete_monitor_from_conf(monitor_id):
+
+    success, errors, current_monitor = get_monitor_from_conf(monitor_id)
+
+    if not success:
+        return False, errors
+
+    success, errors = delete_object_config("monitor", monitor_id)
+    
+    return success, errors
 

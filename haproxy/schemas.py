@@ -3,6 +3,7 @@ from __future__ import print_function # In python 2.7
 import sys
 
 import re
+import socket
 
 def _extract_valid_attribute_names(schema):
 
@@ -83,6 +84,31 @@ def _validate_string_attribute_value(name, value, attr_schema, entity_schema):
             error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid value. string must not exceed '" + str(attr_schema["maxlength"]) + "'."  
             return error 
 
+def _validate_ipaddress_attribute_value(name, value, attr_schema, entity_schema):
+
+    # First, let's validate that this is actually a valid string
+    error = _validate_string_attribute_value(name, value, attr_schema, entity_schema)
+
+    if error:
+        return error
+
+    try:
+        socket.inet_aton(value)
+    except:
+        error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid ipaddress value: '" + value + "'"
+        return error
+
+def _validate_tcpport_attribute_value(name, value, attr_schema, entity_schema):
+
+    # First, let's validate that this is actually a valid number
+    error = _validate_number_attribute_value(name, value, attr_schema, entity_schema)
+
+    if error:
+        return error
+
+    if (value < 0) or (value > 65535):
+        error = "attribute '" + name + "' of object " + entity_schema["type"] + " has an invalid port value: '" + str(value) + "'"
+        return error
 
 def _validate_attr_value(name, value, attr_schema, entity_schema):
     attr_type = attr_schema["type"]
@@ -93,6 +119,11 @@ def _validate_attr_value(name, value, attr_schema, entity_schema):
     if attr_type == "string":
         return  _validate_string_attribute_value(name, value, attr_schema, entity_schema)
 
+    if attr_type == "ipaddress":
+        return  _validate_ipaddress_attribute_value(name, value, attr_schema, entity_schema)
+
+    if attr_type == "tcp-port":
+        return  _validate_tcpport_attribute_value(name, value, attr_schema, entity_schema)
 
 def _validate_oneof_rule(entity, entity_type, rule):
 
