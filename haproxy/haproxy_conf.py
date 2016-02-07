@@ -18,7 +18,10 @@ def read_haproxy_conf():
 
     # Check the file presence.
     if not os.path.isfile(conf_path):
-       error = "Cannot locate HAProxy conf file: %s" % conf_path
+       error = "Cannot locate HAProxy conf file. "
+       error += "Define an environment variable HAPROXY_CONF_FILE that contains "
+       error += "the path for this file before starting the service, "
+       error += "otherwise it is assumed to be at: %s" % conf_path
        errors = [error]
        return False, errors, None
     # open the file

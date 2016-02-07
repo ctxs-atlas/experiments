@@ -1,14 +1,11 @@
 #-------------------------------------------------------------
 ##  PLEASE DO NOT EDIT CONFIGURATION IN THIS FILE MANUALLY !!!
 ###################################################
-###    incarnation: 23
-###    monitor::110    {"rise":6, "name":"hellossa"}
-###    listener::1116    {"address_binds":[{"port":3232}], "name":"aa"}
-###    listener::1114    {"address_binds":[{"port":3232}], "name":"aa"}
+###    incarnation: 17
+###    monitor::0    rise:6 name:hellossa
 ###    server::12    {"ipaddress":"182.27.11.21","name":"server1","port":80}
-###    server::11141    {"ipaddress":"182.27.11.21","name":"server1","port":80}
-###    listener::1117    {"address_binds": [{"port": 3232}], "name": "aa"}
-###    listener::1118    {"address_binds": [{"port": 3232}], "name": "aa"}
+###    listener::16  {"address_binds":[{"port":3232}], "name":"aa"}
+###    listener::14  {"address_binds":[{"port":3232}], "name":"aa"}
 ###################################################
 # this config needs haproxy-1.1.28 or haproxy-1.2.1
 
@@ -89,22 +86,6 @@ listen	appli5-backup 0.0.0.0:10005
 	
 	#errorloc	502	http://192.168.114.58/error502.html
 	#errorfile	503	/etc/haproxy/errors/503.http
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

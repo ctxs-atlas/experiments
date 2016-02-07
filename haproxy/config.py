@@ -11,10 +11,16 @@ from haproxy_conf import read_haproxy_conf, save_haproxy_conf
 START_META_SECTION = "#######"
 END_META_SECTION =   "#######"
 
-CONF_LINES_PREFIX = "###"
+CONF_LINE_PREFIX = "###"
+CONF_LINE_TRANSIENT_MARKER = "*"
+
 CONF_SETTINGS_PREFIX = "    "
 
-INCARNATION_NUMBER_PREFIX = CONF_LINES_PREFIX + CONF_SETTINGS_PREFIX + "incarnation: "
+ID_FIELD = "_id"
+TRANSIENT_FIELD = "_transient"
+
+
+INCARNATION_NUMBER_PREFIX = CONF_LINE_PREFIX + CONF_SETTINGS_PREFIX + "incarnation: "
 
 def _extract_config_sections():
 
@@ -152,8 +158,13 @@ def _merge_updates_into_new_obj(current_obj, obj_updates):
 
     return current_obj
 
-def _get_confline_prefix(obj_type, obj_id=None):
-    prefix = CONF_LINES_PREFIX + CONF_SETTINGS_PREFIX + obj_type + "::"
+def _get_confline_prefix(obj_type, obj_id=None, transient=False):
+    prefix = CONF_LINE_PREFIX
+
+    if transient:
+        prefix += CONF_LINE_TRANSIENT_MARKER
+
+    prefix += CONF_SETTINGS_PREFIX + obj_type + "::"
     
     if obj_id:
          prefix += str(obj_id) + "    "
@@ -163,25 +174,35 @@ def _get_confline_prefix(obj_type, obj_id=None):
 
 def _convert_obj_to_confline(obj_type, obj_id, obj):
 
-    obj_string = _get_confline_prefix(obj_type, obj_id)
+    obj_string = _get_confline_prefix(obj_type, obj_id, transient=True)
 
-    obj_string += json.dumps(obj)
+    if obj:
+        obj_string += json.dumps(obj)
+    else:
+        obj_string += "{}"
 
     print(obj_string, file=sys.stderr)
 
     return obj_string
 
-def _convert_confline_to_obj(obj_string, obj_type):
+def _convert_confline_to_obj(confline, obj_type):
    
-    obj = json.loads(obj_string)      
+    obj_string = confline["obj"]
+
+    try:
+        obj = json.loads(obj_string)      
+    except:
+        return False, ["Invalid JSON object in config file: %s" % obj_string], None
+    
+    if confline[TRANSIENT_FIELD]:
+        obj[TRANSIENT_FIELD] = confline[TRANSIENT_FIELD]
 
     return True, None, obj
 
 
-def _retrieve_conflines_from_metasection(metasection, obj_type):
 
-    confline_prefix = _get_confline_prefix(obj_type)
-    
+def _retrieve_matching_lines_from_metasection(metasection, confline_prefix, transient=True):
+
     matching_lines = []
     for confline in metasection:
         if confline.startswith(confline_prefix):
@@ -202,28 +223,100 @@ def _retrieve_conflines_from_metasection(metasection, obj_type):
              while confline[end_index] == " ":
                  end_index +=1
 
-             matching_line["obj"] = confline[end_index:]
+             matching_line["obj"] = confline[end_index:]                
+             matching_line[TRANSIENT_FIELD] = transient
              matching_lines.append(matching_line)
 
     return matching_lines
 
 
+def _retrieve_applied_conflines_from_metasection(metasection, obj_type):
+    confline_prefix = _get_confline_prefix(obj_type, transient=False)
+    return _retrieve_matching_lines_from_metasection(metasection, confline_prefix, transient=False)
+
+
+def _retrieve_transient_conflines_from_metasection(metasection, obj_type):
+    confline_prefix = _get_confline_prefix(obj_type, transient=True)
+    return _retrieve_matching_lines_from_metasection(metasection, confline_prefix, transient=True)
+
+
+def _retrieve_conflines_from_metasection(metasection, obj_type):
+
+    transient_matching_lines = _retrieve_transient_conflines_from_metasection(metasection, obj_type)
+    applied_matching_lines = _retrieve_applied_conflines_from_metasection(metasection, obj_type)
+    
+    matching_lines = []
+
+    matching_lines.extend(transient_matching_lines)
+    matching_lines.extend(applied_matching_lines)
+
+    return matching_lines
+
+
+def _extract_objectstring_from_metasection(metasection, confline_prefix, obj_id):
+
+    for confline in metasection:
+        if confline.startswith(confline_prefix):
+            start_idx = len(confline_prefix)
+            # If no object ID was given, advance past any object ID found
+            # and in doing so, capture the value of the object ID found.
+            if not obj_id:
+                curr_idx = start_idx
+                while confline[curr_idx] != " ":
+                    curr_idx += 1
+                obj_id = confline[start_idx:curr_idx]
+                start_idx = curr_idx
+
+            return obj_id, confline[start_idx:]
+
+    return None, None
+
+
+
+def _retrieve_transient_confline_from_metasection(metasection, obj_type, obj_id):
+    confline_prefix = _get_confline_prefix(obj_type, obj_id, transient=True)
+    
+    found_obj_id, obj_str =  _extract_objectstring_from_metasection(metasection, confline_prefix, obj_id)
+
+    confline = {}
+    if obj_str:
+        confline["obj"] = obj_str
+        confline[TRANSIENT_FIELD] = True
+    else:
+        confline = None
+
+    return found_obj_id, confline
+
+
+def _retrieve_applied_confline_from_metasection(metasection, obj_type, obj_id):
+    confline_prefix = _get_confline_prefix(obj_type, obj_id, transient=False)
+    
+    found_obj_id, obj_str = _extract_objectstring_from_metasection(metasection, confline_prefix, obj_id)
+
+    confline = {}
+    if obj_str:
+        confline["obj"] = obj_str
+        confline[TRANSIENT_FIELD] = False
+    else:
+        confline = None
+        
+    return found_obj_id, confline
+
+
 def _retrieve_confline_from_metasection(metasection, obj_type, obj_id):
 
-    confline_prefix = _get_confline_prefix(obj_type, obj_id)
-    
-    print("confline_prefix:%s" % confline_prefix, file=sys.stderr)
-    for confline in metasection:
-        print("confline:%s" % confline, file=sys.stderr)
-        if confline.startswith(confline_prefix):
-            print("found the line", file=sys.stderr)
-            return confline[len(confline_prefix):]
+    obj_id, confline = _retrieve_applied_confline_from_metasection(metasection, obj_type, obj_id)
 
-    return None
+    if not confline:
+        obj_id, confline = _retrieve_transient_confline_from_metasection(metasection, obj_type, obj_id)
+
+    return obj_id, confline
+
 
 def _retrieve_confline_index_from_metasection(metasection, obj_type, obj_id):
 
-    confline_prefix = _get_confline_prefix(obj_type, obj_id)
+    if obj_id:
+        confline_prefix = _get_confline_prefix(obj_type, obj_id, transient=True)
     
     index = 0
     for confline in metasection:
@@ -231,6 +324,9 @@ def _retrieve_confline_index_from_metasection(metasection, obj_type, obj_id):
             break
         index += 1
 
+    if index == len(metasection):
+        index = -1
+        
     return index
 
 def _update_metasection_with_new_object(metasection, obj_type, obj):
@@ -260,63 +356,90 @@ def _update_metasection_with_updated_object(metasection, obj_type, obj_id, obj):
 
     index = _retrieve_confline_index_from_metasection(metasection, obj_type, obj_id)
 
+    if index == -1:
+        error = "Implementation Error: Expected object '%s:%s' in metasection not found" % (str(obj_type), str(obj_id))
+        return False, [error], metasection
+
     metasection[index] = obj_str
 
     return True, None, metasection
-
 
 
 def _update_metasection_without_object(metasection, obj_type, obj_id):
 
     index = _retrieve_confline_index_from_metasection(metasection, obj_type, obj_id)
 
+    if index == -1:
+        error = "Implementation Error: Expected object '%s:%s' in metasection not found" % (str(obj_type), str(obj_id))
+        return False, [error], metasection
+    
     del metasection[index]
 
     return True, None, metasection
 
+def _update_metasection_without_transient_objects(metasection):
+
+    confline_transient_prefix = CONF_LINE_PREFIX + CONF_LINE_TRANSIENT_MARKER
+
+    transient_conflines = []
+
+    for confline_str in metasection:
+        if confline_str.startswith(confline_transient_prefix):
+            transient_conflines.append(confline_str)
+
+    new_metasection = [confline for confline in metasection if confline not in transient_conflines]
+
+    return True, None, new_metasection
 
 def get_objects_config(obj_type):
 
      success, errors, before_metasection, metasection, after_metasection = _extract_config_sections()
 
      if not success:
-         return False, errors
+         return False, errors, None
 
      conflines = _retrieve_conflines_from_metasection(metasection, obj_type)
 
      obj_list = []
 
      for confline in conflines:
-         success, errors, obj = _convert_confline_to_obj(confline["obj"], obj_type)
+         success, errors, obj = _convert_confline_to_obj(confline, obj_type)
 
          if not success:
              return False, errors, None
 
-         obj["id"] = confline["id"]
+         obj[ID_FIELD] = confline["id"]
          obj_list.append(obj)
 
      return success, None, obj_list
 
 
 def get_object_config(obj_type, obj_id):
-     success, errors, before_metasection, metasection, after_metasection = _extract_config_sections()
+    success, errors, before_metasection, metasection, after_metasection = _extract_config_sections()
 
-     if not success:
-         return False, errors
+    if not success:
+        return False, errors
 
-     confline = _retrieve_confline_from_metasection(metasection, obj_type, obj_id)
+    found_obj_id, confline = _retrieve_confline_from_metasection(metasection, obj_type, obj_id)
 
-     if not confline:
-         error = "Cannot find a %s object  with id %s in the stored configuration" % (obj_type, str(obj_id))
-         return False, [error], None
+    if not confline:
+        if obj_id:
+            error = "Cannot find a %s object  with id %s in the stored configuration" % (obj_type, str(obj_id))
+            return False, [error], None
+        else:
+            return True, None, None
 
-     success, errors, obj = _convert_confline_to_obj(confline, obj_type)
+    else:
+        success, errors, obj = _convert_confline_to_obj(confline, obj_type)
 
-     if not success:
-         return False, errors, None
+        if not success:
+            return False, errors, None
+
+        if not obj_id and found_obj_id:
+            obj[ID_FIELD] = found_obj_id
 
 
-     return success, None, obj
+        return success, None, obj
 
 
 def add_object_config(obj_type, obj):
@@ -324,7 +447,7 @@ def add_object_config(obj_type, obj):
      success, errors, before_metasection, metasection, after_metasection = _extract_config_sections()
 
      if not success:
-         return False, errors
+         return False, errors, None
 
      success, errors, metasection, obj_id = _update_metasection_with_new_object(metasection, obj_type, obj)
 
@@ -381,3 +504,24 @@ def delete_object_config(obj_type, obj_id):
          return False, errors
 
      return success, None
+
+
+
+def delete_transient_object_configs():
+
+    success, errors, before_metasection, metasection, after_metasection = _extract_config_sections()
+
+    if not success:
+        return False, errors
+
+    success, errors, new_metasection = _update_metasection_without_transient_objects(metasection)
+
+    if not success:
+        return False, errors
+
+    success, errors = _merge_config_sections(before_metasection, new_metasection, after_metasection)
+
+    if not success:
+        return False, errors
+
+    return success, None
