@@ -40,10 +40,10 @@ server_schema = {
 
 
 def validate_create_server(server):
-    return validate_entity_attributes_for_creation(server, server_schema)
+    validate_entity_attributes_for_creation(server, server_schema)
 
 def validate_update_server(server):
-    return validate_entity_attributes_for_update(server, server_schema)
+    validate_entity_attributes_for_update(server, server_schema)
 
 def get_servers_from_conf():
     success, errors, servers = get_objects_config("server")

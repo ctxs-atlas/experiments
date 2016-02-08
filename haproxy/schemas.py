@@ -5,6 +5,8 @@ import re
 import socket
 from common_schemas import schema_types
 
+from resource_exception import ResourceException
+
 
 SIMPLE_TYPES = ["string", "number", "boolean", "ipaddress", "tcp-port"]
 
@@ -127,8 +129,6 @@ def _validate_tcpport_attribute_value(name, value, attr_schema, entity_schema):
         return error
 
 
-def _validate_schematype_attribute_value(name, value, attr_schema, entity_schema):
-    return validate_entity_attributes_for_creation(value, attr_schema)
 
 
 def _validate_simple_attr_value(name, value, attr_schema, entity_schema):
@@ -278,9 +278,7 @@ def validate_entity_attributes_for_creation(entity, schema):
                     errors.append(error)
 
     if errors:
-        return False, errors
-    return True, None
-
+        raise ResourceException(errors, 400)                
 
 
 def validate_entity_attributes_for_update(entity, schema):
@@ -319,6 +317,7 @@ def validate_entity_attributes_for_update(entity, schema):
 	    errors.extend(sub_errors)
 
     if errors:
-        return False, errors
+        raise ResourceException(errors, 400)
 
-    return True, None
+#def _validate_schematype_attribute_value(name, value, attr_schema, entity_schema):
+#    return validate_entity_attributes_for_creation(value, attr_schema)
